@@ -165,7 +165,17 @@ python -c "from instrument_ai_pdf_splitter import InstrumentAiPdfSplitter; impor
 
 ## License
 
-Specify your license here (e.g., MIT). If you choose MIT, include a LICENSE file with the standard text.
+Copyright (c) 2025 Flinn
+
+Permission is hereby granted to use, copy, and distribute this software in unmodified form,
+provided that proper attribution is given to the author. Modification, merging, or creation
+of derivative works based on this software is strictly prohibited.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Acknowledgments
 
