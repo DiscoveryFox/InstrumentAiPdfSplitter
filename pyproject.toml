@@ -1,0 +1,24 @@
+[project]
+name = "instrumentaipdfsplitter"
+version = "0.1.0"
+description = "AI-assisted instrument part detector and PDF splitter"
+readme = "README.md"
+license = {text = "Proprietary - No modification allowed"}
+authors = [
+    {name = "Flinn Fuchs", email = "flinn.handymail@gmail.com"},
+]
+keywords = ["instrument", "pdf", "split", "splitting", "splitting pdf", "music", "openai", ]
+requires-python = ">=3.10"
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "openai>=1.40.0",
+    "pypdf>=5.0.0",
+    "pytest>=8.0.0",
+    "pytest-dotenv>=0.5.2",
+]
