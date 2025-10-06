@@ -14,6 +14,15 @@ import openai
 
 @dataclass
 class InstrumentPart:
+    """
+    Dataclass representing a single instrument part with an optional voice/desk number and a 1-indexed inclusive page range.
+
+    Attributes:
+        name: Instrument name (e.g., 'Trumpet', 'Alto Sax', 'Clarinet in Bb').
+        voice: Optional voice/desk identifier (e.g., '1', '2'); None if not applicable.
+        start_page: First page where this part appears (1-indexed).
+        end_page: Last page where this part appears (1-indexed).
+    """
     name: str
     voice: Optional[str]
     start_page: int  # 1-indexed
@@ -34,14 +43,13 @@ class InstrumentAiPdfSplitter:
         model: str | None = None,
     ) -> None:
         """
-        Initializes an instance of the class to provide a specific prompt for analyzing
-        multi-instrument score books in PDF format. This includes identifying instrument
-        parts, their voice numbers when applicable, and their starting pages. The output
-        is structured strictly in JSON format adhering to a defined schema.
+        Initialize the PDF splitter that uses OpenAI to analyze multi-instrument scores.
 
-        :param api_key: The API key used for authenticating with the OpenAI service.
-        :param model: The specific OpenAI model to use. If not provided, defaults to
-            the 'OPENAI_MODEL' environment variable or 'gpt-4.1'.
+        Args:
+            api_key: OpenAI API key.
+            model: Model name. Defaults to env var OPENAI_MODEL or 'gpt-4.1'.
+
+        Sets up the OpenAI client and the analysis prompt.
         """
 
         self.api_key: str = api_key
@@ -65,6 +73,21 @@ class InstrumentAiPdfSplitter:
         )
 
     def analyse(self, pdf_path: str):
+        """Analyze a multi-page sheet-music PDF with OpenAI and return instrument parts.
+
+        Validates the path, uploads the file once per content hash, calls the model with a structured prompt, and parses the JSON output.
+
+        Args:
+            pdf_path: Path to a .pdf file.
+
+        Returns:
+            dict: JSON object with key 'instruments' listing items {name, voice|null, start_page, end_page}, with pages 1-indexed.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+            ValueError: If the path is not a file or not a PDF.
+            json.JSONDecodeError: If the model output is not valid JSON.
+        """
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"File not found: {pdf_path}")
         if not os.path.isfile(pdf_path):
@@ -104,6 +127,15 @@ class InstrumentAiPdfSplitter:
         return data
 
     def is_file_already_uploaded(self, pdf_path: str) -> Tuple[bool, str] | Tuple[bool]:
+        """
+        Check whether a file with the same SHA-256 hash is already uploaded to OpenAI.
+
+                Args:
+                    pdf_path: Local PDF path.
+
+                Returns:
+                    Tuple[bool, str] | Tuple[bool]: (True, file_id) if a matching upload exists; otherwise (False,).
+        """
         files = self._client.files.list()
         metadata = [(file.id, file.filename.split(".pdf")[0]) for file in files]
         supplied_hash = self.file_hash(pdf_path)
@@ -117,9 +149,21 @@ class InstrumentAiPdfSplitter:
                   out_dir: Optional[str] = None) -> List[
         Dict[str, Any]]:
         """
-        Splitte das PDF anhand der gelieferten Instrument-Daten.
-        Erzeugt pro Instrument/Voice eine Datei im Unterordner "<stem>_parts" und
-        gibt eine Liste mit Metadaten inkl. Ausgabepfad zurück.
+        Split the source PDF into one file per instrument/voice.
+
+        Uses provided instrument data or calls analyse() to obtain it, clamps page ranges to the document, and writes files to '<stem>_parts' or the given out_dir.
+
+        Args:
+            pdf_path: Path to the source PDF.
+            instruments_data: List of InstrumentPart or dict with 'instruments'; if None, analyse() is invoked.
+            out_dir: Output directory; defaults to a '<stem>_parts' sibling of the source.
+
+        Returns:
+            List[Dict[str, Any]]: Metadata per part: name, voice, start_page, end_page, output_path.
+
+        Raises:
+            FileNotFoundError: If the path does not exist.
+            ValueError: If the path is not a file or not a PDF.
         """
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"File not found: {pdf_path}")
@@ -200,7 +244,13 @@ class InstrumentAiPdfSplitter:
 
     @staticmethod
     def file_hash(path):
-        """Compute SHA256 hash of the file contents."""
+        """Return the SHA-256 hex digest of a file's contents.
+
+        Args:
+            path: Filesystem path to the file.
+
+        Returns:
+            str: Hexadecimal digest of the file contents."""
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
