@@ -1,6 +1,6 @@
 [project]
 name = "instrumentaipdfsplitter"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-assisted instrument part detector and PDF splitter"
 readme = "README.md"
 license = {text = "Proprietary - No modification allowed"}
