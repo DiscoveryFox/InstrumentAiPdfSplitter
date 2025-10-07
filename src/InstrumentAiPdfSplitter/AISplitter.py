@@ -60,16 +60,26 @@ class InstrumentAiPdfSplitter:
 
         self.prompt: str = (
             "You are a music score analyzer. You are given a PDF of a multi-instrument score book. "
-            "Identify every instrument part and both the FIRST and LAST page where that part appears. If a part includes "
-            "a desk/voice number like '1.' or '2.' capture it as voice. Output strictly as JSON with this schema:\n"
-            "{\n  \"instruments\": [\n    {\n      \"name\": string,        // e.g., 'Trumpet', 'Alto Sax', 'Clarinet in Bb'\n"
+            "Your task is to identify every instrument part and both the FIRST and LAST page where that part appears. "
+            "If a part includes a desk or voice number such as '1.' or '2.', capture it as the 'voice'. "
+            "Output strictly as JSON following this schema:\n"
+            "{\n"
+            "  \"instruments\": [\n"
+            "    {\n"
+            "      \"name\": string,        // e.g., 'Trumpet', 'Alto Sax', 'Clarinet in Bb'\n"
             "      \"voice\": string|null,   // e.g., '1', '2', '1.'; if absent, null\n"
             "      \"start_page\": number,   // 1-indexed page where that instrument's part begins\n"
             "      \"end_page\": number      // 1-indexed page where that instrument's part ends\n"
-            "    }\n  ]\n}\n"
-            "Rules: Include both first and last page per instrument/voice. Do not include duplicates. "
-            "If you are unsure, best-effort guess from headers, titles, prominent instrument labels, or visual cues. "
-            "Return JSON only."
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Rules:\n"
+            "- Include both the first and last page for each unique instrument/voice combination.\n"
+            "- Avoid duplicates.\n"
+            "- Use clear visual or textual cues such as headers, instrument labels, and section titles.\n"
+            "- A page is *more likely* to be the START page for an instrument if the title of a piece also appears on that page.\n"
+            "- If uncertain, make a best-effort guess based on layout, typography, or recurring labeling patterns.\n"
+            "Return JSON only — no explanations or extra text."
         )
 
     def analyse(self, pdf_path: str):
@@ -120,7 +130,8 @@ class InstrumentAiPdfSplitter:
                     {"type": "input_file", "file_id": file_id},
                     {"type": "input_text", "text": self.prompt}
                 ]
-            }]
+            }],
+            reasoning= {"effort": "high"}
         )
         data = json.loads(response.output_text)
 
