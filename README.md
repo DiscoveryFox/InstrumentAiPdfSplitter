@@ -10,10 +10,8 @@ A lightweight Python tool that uses OpenAI to analyze multi-page sheet-music PDF
 
 ## Installation
 
-Replace PACKAGE_NAME with your actual PyPI name once published (e.g., instrument-ai-pdf-splitter).
-
 ```bash
-pip install PACKAGE_NAME
+pip install instrumentaipdfsplitter
 ```
 
 Requirements:
@@ -28,7 +26,7 @@ Requirements:
 ```python
 import os
 import json
-from instrument_ai_pdf_splitter import InstrumentAiPdfSplitter
+from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter
 
 # Set your OpenAI API key via env or pass directly
 api_key = os.getenv("OPENAI_API_KEY")
@@ -60,7 +58,7 @@ Output files are saved into a sibling directory named "<stem>_parts" by default 
 You can skip analysis and provide parts manually, either as InstrumentPart instances or JSON-like dicts.
 
 ```python
-from instrument_ai_pdf_splitter import InstrumentAiPdfSplitter, InstrumentPart
+from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter, InstrumentPart
 
 splitter = InstrumentAiPdfSplitter(api_key="YOUR_OPENAI_API_KEY")
 
@@ -146,7 +144,7 @@ cd REPO_DIR
 pip install -e .
 
 # Run a quick test (adjust paths)
-python -c "from instrument_ai_pdf_splitter import InstrumentAiPdfSplitter; import os; s=InstrumentAiPdfSplitter(api_key=os.getenv('OPENAI_API_KEY')); print(s.file_hash('scores/book.pdf'))"
+python -c "from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter; import os; s=InstrumentAiPdfSplitter(api_key=os.getenv('OPENAI_API_KEY')); print(s.file_hash('scores/book.pdf'))"
 ```
 
 ## Versioning and compatibility

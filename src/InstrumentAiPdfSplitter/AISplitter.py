@@ -95,7 +95,7 @@ class InstrumentAiPdfSplitter:
         if not pdf_path.endswith(".pdf"):
             raise ValueError(f"Not a PDF file: {pdf_path}")
 
-        if not self.is_file_already_uploaded(pdf_path):
+        if not self.is_file_already_uploaded(pdf_path)[0]:
             tmp_dir = tempfile.gettempdir()
             tmp_path = os.path.join(tmp_dir, f"{self.file_hash(pdf_path)}.pdf")
             shutil.copyfile(pdf_path, tmp_path)
@@ -256,6 +256,3 @@ class InstrumentAiPdfSplitter:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return h.hexdigest()
-
-
-__all__ = ["InstrumentAiPdfSplitter", "InstrumentPart"]
