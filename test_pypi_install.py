@@ -1,11 +1,29 @@
 """
 Test script to verify the module can be installed from PyPI and basic functionality works.
 
-This test:
-1. Uninstalls any local version
-2. Installs from PyPI
-3. Tests import
-4. Tests error handling with wrong API key
+This test script verifies:
+1. The package can be installed from PyPI (not from local source)
+2. The module can be imported successfully
+3. The main classes (InstrumentAiPdfSplitter, InstrumentPart) are available
+4. Error handling works correctly with an invalid API key
+
+Usage:
+    python test_pypi_install.py
+
+The script will:
+- Uninstall any existing local version
+- Install the latest version from PyPI
+- Test import functionality
+- Verify error handling with an invalid API key
+- Print a detailed summary of results
+
+Exit codes:
+    0 - All tests passed
+    1 - One or more tests failed
+
+Note: This test requires internet connectivity to download the package from PyPI.
+      If PyPI is unavailable, the script will attempt to download the wheel file
+      directly from PyPI's CDN.
 """
 import subprocess
 import sys
