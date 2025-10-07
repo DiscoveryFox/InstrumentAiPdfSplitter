@@ -53,7 +53,7 @@ class InstrumentAiPdfSplitter:
         """
 
         self.api_key: str = api_key
-        self.model: str = model or os.getenv("OPENAI_MODEL") or "gpt-4.1"
+        self.model: str = model or os.getenv("OPENAI_MODEL") or "gpt-5"
         self._client: openai.OpenAI = openai.OpenAI(
             api_key=self.api_key,
         )

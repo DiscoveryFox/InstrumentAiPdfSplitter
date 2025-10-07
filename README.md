@@ -80,10 +80,10 @@ for r in results:
 ## Configuration
 
 - API key: Provide via constructor or set OPENAI_API_KEY in your environment.
-- Model: Pass `model` to the constructor or set `OPENAI_MODEL`; defaults to "gpt-4.1".
+- Model: Pass `model` to the constructor or set `OPENAI_MODEL`; defaults to "gpt-5".
 
 ```python
-splitter = InstrumentAiPdfSplitter(api_key="...", model="gpt-4.1")
+splitter = InstrumentAiPdfSplitter(api_key="...", model="gpt-5")
 ```
 
 Note: Model availability depends on your OpenAI account. Use a model that supports the Responses API with file inputs. You will get the best results with gpt-5.
