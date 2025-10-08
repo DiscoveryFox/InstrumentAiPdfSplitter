@@ -1,6 +1,6 @@
 [project]
 name = "instrumentaipdfsplitter"
-version = "3.3.0"
+version = "3.3.1"
 description = "AI-assisted instrument part detector and PDF splitter"
 readme = "README.md"
 license = {text = "Proprietary - No modification allowed"}
@@ -26,3 +26,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/DiscoveryFox/InstrumentAiPdfSplitter"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.0",
+]

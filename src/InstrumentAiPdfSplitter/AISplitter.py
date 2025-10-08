@@ -23,10 +23,11 @@ class InstrumentPart:
         start_page: First page where this part appears (1-indexed).
         end_page: Last page where this part appears (1-indexed).
     """
+
     name: str
     voice: Optional[str]
     start_page: int  # 1-indexed
-    end_page: int    # 1-indexed
+    end_page: int  # 1-indexed
 
 
 class InstrumentAiPdfSplitter:
@@ -36,6 +37,7 @@ class InstrumentAiPdfSplitter:
 
     Constructor accepts OpenAI credentials to keep usage flexible in different environments.
     """
+
     def __init__(
         self,
         api_key: str,
@@ -64,12 +66,12 @@ class InstrumentAiPdfSplitter:
             "If a part includes a desk or voice number such as '1.' or '2.', capture it as the 'voice'. "
             "Output strictly as JSON following this schema:\n"
             "{\n"
-            "  \"instruments\": [\n"
+            '  "instruments": [\n'
             "    {\n"
             "      \"name\": string,        // e.g., 'Trumpet', 'Alto Sax', 'Clarinet in Bb'\n"
             "      \"voice\": string|null,   // e.g., '1', '2', '1.'; if absent, null\n"
-            "      \"start_page\": number,   // 1-indexed page where that instrument's part begins\n"
-            "      \"end_page\": number      // 1-indexed page where that instrument's part ends\n"
+            '      "start_page": number,   // 1-indexed page where that instrument\'s part begins\n'
+            '      "end_page": number      // 1-indexed page where that instrument\'s part ends\n'
             "    }\n"
             "  ]\n"
             "}\n"
@@ -124,14 +126,16 @@ class InstrumentAiPdfSplitter:
         # noinspection PyTypeChecker
         response = self._client.responses.create(
             model=self.model,
-            input=[{
-                "role": "user",
-                "content": [
-                    {"type": "input_file", "file_id": file_id},
-                    {"type": "input_text", "text": self.prompt}
-                ]
-            }],
-            reasoning= {"effort": "high"}
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_file", "file_id": file_id},
+                        {"type": "input_text", "text": self.prompt},
+                    ],
+                }
+            ],
+            reasoning={"effort": "high"},
         )
         data = json.loads(response.output_text)
 
@@ -153,24 +157,32 @@ class InstrumentAiPdfSplitter:
         for file_id, file_hash in metadata:
             if supplied_hash == file_hash:
                 return True, file_id
-        return False,
+        return (False,)
 
-    def split_pdf(self, pdf_path: str,
-                  instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None,
-                  out_dir: Optional[str] = None) -> List[
-        Dict[str, Any]]:
+    def split_pdf(
+        self,
+        pdf_path: str,
+        instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None,
+        out_dir: Optional[str] = None,
+        *,
+        return_files: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
         Split the source PDF into one file per instrument/voice.
 
-        Uses provided instrument data or calls analyse() to obtain it, clamps page ranges to the document, and writes files to '<stem>_parts' or the given out_dir.
+        Uses provided instrument data or calls analyse() to obtain it, clamps page ranges to the document.
+        By default, writes files to '<stem>_parts' (or the given out_dir). If return_files=True, nothing is
+        written to disk and the split PDFs are returned as in-memory bytes instead.
 
         Args:
             pdf_path: Path to the source PDF.
             instruments_data: List of InstrumentPart or dict with 'instruments'; if None, analyse() is invoked.
-            out_dir: Output directory; defaults to a '<stem>_parts' sibling of the source.
+            out_dir: Output directory; defaults to a '<stem>_parts' sibling of the source. Ignored when return_files=True.
+            return_files: If True, do not write to disk; return each part as bytes along with a suggested filename.
 
         Returns:
-            List[Dict[str, Any]]: Metadata per part: name, voice, start_page, end_page, output_path.
+            List[Dict[str, Any]]: For on-disk mode: name, voice, start_page, end_page, output_path.
+            For in-memory mode (return_files=True): name, voice, start_page, end_page, filename, content (bytes).
 
         Raises:
             FileNotFoundError: If the path does not exist.
@@ -196,11 +208,14 @@ class InstrumentAiPdfSplitter:
         total_pages = len(reader.pages)
 
         base = Path(pdf_path)
-        if out_dir is None:
-            out_dir = base.parent / f"{base.stem}_parts"
+        if not return_files:
+            if out_dir is None:
+                out_dir = base.parent / f"{base.stem}_parts"
+            else:
+                out_dir = Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
         else:
-            out_dir = Path(out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+            out_dir = None
 
         def sanitize(text: str) -> str:
             text = re.sub(r"[^\w\s.\-]+", "", text, flags=re.UNICODE)
@@ -235,23 +250,138 @@ class InstrumentAiPdfSplitter:
             for p in range(start_page - 1, end_page):
                 writer.add_page(reader.pages[p])
 
-            voice_suffix = f" {str(voice).strip()}" if voice not in (None, "", "null", "None") else ""
+            voice_suffix = (
+                f" {str(voice).strip()}"
+                if voice not in (None, "", "null", "None")
+                else ""
+            )
             safe_name = sanitize(f"{name}{voice_suffix}")
-            out_path = out_dir / f"{idx:02d} - {safe_name}.pdf"
+            filename = f"{idx:02d} - {safe_name}.pdf"
 
-            with open(out_path, "wb") as f:
-                writer.write(f)
+            if return_files:
+                import io
 
-            results.append({
-                "name": name,
-                "voice": voice,
-                "start_page": start_page,
-                "end_page": end_page,
-                "output_path": str(out_path),
-            })
+                buf = io.BytesIO()
+                writer.write(buf)
+                content = buf.getvalue()
+                results.append(
+                    {
+                        "name": name,
+                        "voice": voice,
+                        "start_page": start_page,
+                        "end_page": end_page,
+                        "filename": filename,
+                        "content": content,
+                    }
+                )
+            else:
+                out_path = out_dir / filename
+                with open(out_path, "wb") as f:
+                    writer.write(f)
+                results.append(
+                    {
+                        "name": name,
+                        "voice": voice,
+                        "start_page": start_page,
+                        "end_page": end_page,
+                        "output_path": str(out_path),
+                    }
+                )
 
         return results
 
+    def analyse_and_split(
+        self,
+        pdf_path: str,
+        out_dir: Optional[str] = None,
+        *,
+        return_files: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Convenience method: analyse() then split_pdf() for multi-voice PDFs.
+
+        Args:
+            pdf_path: Path to the source PDF.
+            out_dir: Optional output directory for split files.
+            return_files: If True, return the split PDFs as bytes instead of writing to disk.
+        Returns:
+            List[Dict[str, Any]]: Same structure as split_pdf().
+        """
+        analysed = self.analyse(pdf_path)
+        return self.split_pdf(
+            pdf_path,
+            instruments_data=analysed,
+            out_dir=out_dir,
+            return_files=return_files,
+        )
+
+    def analyse_single_part(self, pdf_path: str) -> Dict[str, Any]:
+        """Analyse a single-part PDF and extract instrument name and optional voice.
+
+        This assumes the PDF contains exactly one instrument part. It returns a
+        simple JSON object with the detected instrument name and voice (if any),
+        along with start/end pages inferred from the document length.
+        """
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"File not found: {pdf_path}")
+        if not os.path.isfile(pdf_path):
+            raise ValueError(f"Not a file: {pdf_path}")
+        if not pdf_path.lower().endswith(".pdf"):
+            raise ValueError(f"Not a PDF file: {pdf_path}")
+
+        # Determine page count locally for reliable start/end inference
+        reader = PdfReader(pdf_path)
+        total_pages = len(reader.pages)
+
+        # Upload or reuse existing upload by content hash
+        if not self.is_file_already_uploaded(pdf_path)[0]:
+            tmp_dir = tempfile.gettempdir()
+            tmp_path = os.path.join(tmp_dir, f"{self.file_hash(pdf_path)}.pdf")
+            shutil.copyfile(pdf_path, tmp_path)
+            with open(tmp_path, "rb") as f:
+                uploaded_file = self._client.files.create(file=f, purpose="assistants")
+            os.remove(tmp_path)
+            file_id: str = uploaded_file.id
+        else:
+            file_id = self.is_file_already_uploaded(pdf_path)[1]
+
+        single_part_prompt = (
+            "You are a music score analyzer. You are given a PDF that contains a single instrument part. "
+            "Identify the instrument name and any voice/desk number (e.g., '1', '2', '1.'), if present. "
+            "Return strict JSON with this schema:\n"
+            "{\n"
+            "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax'\n"
+            "  \"voice\": string|null   // e.g., '1', '2'; null if absent\n"
+            "}\n"
+            "Return JSON only — no explanations or extra text."
+        )
+
+        # noinspection PyTypeChecker
+        response = self._client.responses.create(
+            model=self.model,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_file", "file_id": file_id},
+                        {"type": "input_text", "text": single_part_prompt},
+                    ],
+                }
+            ],
+            reasoning={"effort": "medium"},
+        )
+        meta = json.loads(response.output_text)
+
+        # Normalize and augment with inferred page range
+        name = meta.get("name") if isinstance(meta, dict) else None
+        voice = meta.get("voice") if isinstance(meta, dict) else None
+        result = {
+            "name": name,
+            "voice": voice,
+            "start_page": 1,
+            "end_page": total_pages,
+            "pages": total_pages,
+        }
+        return result
 
     @staticmethod
     def file_hash(path):

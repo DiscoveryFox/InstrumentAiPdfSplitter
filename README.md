@@ -51,7 +51,37 @@ for r in results:
     print(f"{r['name']} {r['voice']} -> {r['output_path']} [{r['start_page']}-{r['end_page']}]")
 ```
 
-Output files are saved into a sibling directory named "<stem>_parts" by default (e.g., book_parts).
+### One-liner
+
+If you just want to analyse and split in one go:
+
+```python
+results = splitter.analyse_and_split("scores/book.pdf")
+```
+
+### Single-part analysis (extract instrument and voice)
+
+If your PDF contains a single instrument part and you only want to extract its information:
+
+```python
+info = splitter.analyse_single_part("scores/trumpet1.pdf")
+print(info)
+# Example: {"name": "Trumpet in Bb", "voice": "1", "start_page": 1, "end_page": 3, "pages": 3}
+```
+
+By default, output files are saved into a sibling directory named "<stem>_parts" (e.g., book_parts).
+To change the output location, pass `out_dir`.
+To avoid writing to disk entirely and get the split PDFs back as in-memory bytes, set `return_files=True`:
+
+```python
+# Return split PDFs without writing them to disk
+results = splitter.split_pdf("scores/book.pdf", return_files=True)
+for r in results:
+    print(r["filename"], len(r["content"]))  # content is bytes for the PDF
+
+# One-liner variant
+results = splitter.analyse_and_split("scores/book.pdf", return_files=True)
+```
 
 ## Manual instrument data (no AI call)
 
@@ -105,8 +135,10 @@ Note: Model availability depends on your OpenAI account. Use a model that suppor
 | InstrumentPart | name: str; voice: Optional[str]; start_page: int; end_page: int | Dataclass representing a single instrument part with optional voice and 1-indexed inclusive page range. |
 | InstrumentAiPdfSplitter.__init__ | (api_key: str, *, model: str | None = None) -> None | Initialize the splitter with OpenAI credentials and default prompt. |
 | InstrumentAiPdfSplitter.analyse | (pdf_path: str) -> dict | Analyze a PDF and return instrument data as JSON {instruments: [...]}. |
+| InstrumentAiPdfSplitter.analyse_and_split | (pdf_path: str, out_dir: Optional[str] = None, *, return_files: bool = False) -> List[Dict[str, Any]] | Convenience: analyse then split in one call; set return_files=True to get in-memory PDFs. |
+| InstrumentAiPdfSplitter.analyse_single_part | (pdf_path: str) -> Dict[str, Any] | Analyse a single-part PDF and extract instrument name and optional voice; returns also start/end/pages. |
 | InstrumentAiPdfSplitter.is_file_already_uploaded | (pdf_path: str) -> Tuple[bool, str] | Check if a file (by SHA-256) is already uploaded; returns (True, file_id) or (False,). |
-| InstrumentAiPdfSplitter.split_pdf | (pdf_path: str, instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None, out_dir: Optional[str] = None) -> List[Dict[str, Any]] | Split the PDF per instrument/voice. Returns metadata with output_path. |
+| InstrumentAiPdfSplitter.split_pdf | (pdf_path: str, instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None, out_dir: Optional[str] = None, *, return_files: bool = False) -> List[Dict[str, Any]] | Split the PDF per instrument/voice. Returns on-disk metadata (output_path) or in-memory (filename, content bytes) when return_files=True. |
 | InstrumentAiPdfSplitter.file_hash | (path: str) -> str | Compute SHA-256 hex digest of a file’s contents. |
 
 ## Error handling
