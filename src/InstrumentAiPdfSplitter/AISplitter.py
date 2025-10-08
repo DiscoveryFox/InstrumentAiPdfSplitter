@@ -125,21 +125,34 @@ class InstrumentAiPdfSplitter:
             if not path.lower().endswith(".pdf"):
                 raise ValueError(f"Not a PDF file: {path}")
 
-            if not self.is_file_already_uploaded(path)[0]:
+            already = self.is_file_already_uploaded(path)
+            if already and already[0]:
+                file_id = already[1]
+            else:
                 tmp_dir = tempfile.gettempdir()
-                tmp_path = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
-                shutil.copyfile(path, tmp_path)
+                upload_tmp = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
+                # If source and upload destination are the same file, don't copy (avoid SameFileError)
+                if os.path.abspath(path) != os.path.abspath(upload_tmp):
+                    shutil.copyfile(path, upload_tmp)
+                    upload_from = upload_tmp
+                    remove_after = True
+                else:
+                    upload_from = path
+                    remove_after = False
 
-                with open(tmp_path, "rb") as f:
+                with open(upload_from, "rb") as f:
                     uploaded_file = self._client.files.create(
                         file=f,
                         purpose="assistants",
                     )
 
-                os.remove(tmp_path)
+                if remove_after:
+                    try:
+                        os.remove(upload_tmp)
+                    except Exception:
+                        pass
+
                 file_id: str = uploaded_file.id
-            else:
-                file_id = self.is_file_already_uploaded(path)[1]
 
             # noinspection PyTypeChecker
             response = self._client.responses.create(
@@ -347,17 +360,30 @@ class InstrumentAiPdfSplitter:
             reader = PdfReader(path)
             total_pages = len(reader.pages)
 
-            # Upload or reuse existing upload by content hash
-            if not self.is_file_already_uploaded(path)[0]:
-                tmp_dir = tempfile.gettempdir()
-                tmp_path = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
-                shutil.copyfile(path, tmp_path)
-                with open(tmp_path, "rb") as f:
-                    uploaded_file = self._client.files.create(file=f, purpose="assistants")
-                os.remove(tmp_path)
-                file_id: str = uploaded_file.id
+            already = self.is_file_already_uploaded(path)
+            if already and already[0]:
+                file_id = already[1]
             else:
-                file_id = self.is_file_already_uploaded(path)[1]
+                tmp_dir = tempfile.gettempdir()
+                upload_tmp = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
+                if os.path.abspath(path) != os.path.abspath(upload_tmp):
+                    shutil.copyfile(path, upload_tmp)
+                    upload_from = upload_tmp
+                    remove_after = True
+                else:
+                    upload_from = path
+                    remove_after = False
+
+                with open(upload_from, "rb") as f:
+                    uploaded_file = self._client.files.create(file=f, purpose="assistants")
+
+                if remove_after:
+                    try:
+                        os.remove(upload_tmp)
+                    except Exception:
+                        pass
+
+                file_id: str = uploaded_file.id
 
             single_part_prompt = (
                 "You are a music score analyzer. You are given a PDF that contains a single instrument part. "
