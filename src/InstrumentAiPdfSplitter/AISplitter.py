@@ -2,7 +2,8 @@ import hashlib
 import shutil
 import tempfile
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
+from werkzeug.datastructures import FileStorage
 import json
 import os
 import re
@@ -84,84 +85,111 @@ class InstrumentAiPdfSplitter:
             "Return JSON only — no explanations or extra text."
         )
 
-    def analyse(self, pdf_path: str):
+    def _ensure_path(self, pdf_input: Union[str, FileStorage]) -> Tuple[str, bool]:
+        """
+        Ensure we have a filesystem path for the PDF.
+
+        Returns (path, is_temp) where is_temp=True indicates the path is a temporary file
+        created from a FileStorage and should be removed by the caller when done.
+        """
+        if isinstance(pdf_input, str):
+            return pdf_input, False
+
+        # pdf_input is a FileStorage:
+        # Read bytes, compute hash, write deterministic temp file named <hash>.pdf
+        pdf_input.stream.seek(0)
+        data = pdf_input.read()
+        h = hashlib.sha256()
+        h.update(data)
+        digest = h.hexdigest()
+
+        tmp_dir = tempfile.gettempdir()
+        tmp_path = os.path.join(tmp_dir, f"{digest}.pdf")
+        # Write only if not already present (avoid race overwrite)
+        if not os.path.exists(tmp_path):
+            with open(tmp_path, "wb") as f:
+                f.write(data)
+        return tmp_path, True
+
+    def analyse(self, pdf_path: Union[str, FileStorage]):
         """Analyze a multi-page sheet-music PDF with OpenAI and return instrument parts.
 
-        Validates the path, uploads the file once per content hash, calls the model with a structured prompt, and parses the JSON output.
-
-        Args:
-            pdf_path: Path to a .pdf file.
-
-        Returns:
-            dict: JSON object with key 'instruments' listing items {name, voice|null, start_page, end_page}, with pages 1-indexed.
-
-        Raises:
-            FileNotFoundError: If the path does not exist.
-            ValueError: If the path is not a file or not a PDF.
-            json.JSONDecodeError: If the model output is not valid JSON.
+        Accepts a filesystem path or a werkzeug FileStorage.
         """
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"File not found: {pdf_path}")
-        if not os.path.isfile(pdf_path):
-            raise ValueError(f"Not a file: {pdf_path}")
-        if not pdf_path.endswith(".pdf"):
-            raise ValueError(f"Not a PDF file: {pdf_path}")
+        path, is_temp = self._ensure_path(pdf_path)
+        try:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+            if not os.path.isfile(path):
+                raise ValueError(f"Not a file: {path}")
+            if not path.lower().endswith(".pdf"):
+                raise ValueError(f"Not a PDF file: {path}")
 
-        if not self.is_file_already_uploaded(pdf_path)[0]:
-            tmp_dir = tempfile.gettempdir()
-            tmp_path = os.path.join(tmp_dir, f"{self.file_hash(pdf_path)}.pdf")
-            shutil.copyfile(pdf_path, tmp_path)
+            if not self.is_file_already_uploaded(path)[0]:
+                tmp_dir = tempfile.gettempdir()
+                tmp_path = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
+                shutil.copyfile(path, tmp_path)
 
-            with open(tmp_path, "rb") as f:
-                uploaded_file = self._client.files.create(
-                    file=f,
-                    purpose="assistants",
-                )
+                with open(tmp_path, "rb") as f:
+                    uploaded_file = self._client.files.create(
+                        file=f,
+                        purpose="assistants",
+                    )
 
-            os.remove(tmp_path)
-            file_id: str = uploaded_file.id
-        else:
-            file_id = self.is_file_already_uploaded(pdf_path)[1]
+                os.remove(tmp_path)
+                file_id: str = uploaded_file.id
+            else:
+                file_id = self.is_file_already_uploaded(path)[1]
 
-        # noinspection PyTypeChecker
-        response = self._client.responses.create(
-            model=self.model,
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_file", "file_id": file_id},
-                        {"type": "input_text", "text": self.prompt},
-                    ],
-                }
-            ],
-            reasoning={"effort": "high"},
-        )
-        data = json.loads(response.output_text)
+            # noinspection PyTypeChecker
+            response = self._client.responses.create(
+                model=self.model,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_file", "file_id": file_id},
+                            {"type": "input_text", "text": self.prompt},
+                        ],
+                    }
+                ],
+                reasoning={"effort": "high"},
+            )
+            data = json.loads(response.output_text)
 
-        return data
+            return data
+        finally:
+            if is_temp:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
-    def is_file_already_uploaded(self, pdf_path: str) -> Tuple[bool, str] | Tuple[bool]:
+    def is_file_already_uploaded(self, pdf_path: Union[str, FileStorage]) -> Tuple[bool, str] | Tuple[bool]:
         """
         Check whether a file with the same SHA-256 hash is already uploaded to OpenAI.
 
-                Args:
-                    pdf_path: Local PDF path.
-
-                Returns:
-                    Tuple[bool, str] | Tuple[bool]: (True, file_id) if a matching upload exists; otherwise (False,).
+        Accepts a filesystem path or a FileStorage.
         """
-        files = self._client.files.list()
-        metadata = [(file.id, file.filename.split(".pdf")[0]) for file in files]
-        supplied_hash = self.file_hash(pdf_path)
-        for file_id, file_hash in metadata:
-            if supplied_hash == file_hash:
-                return True, file_id
-        return (False,)
+        path, is_temp = self._ensure_path(pdf_path) if not isinstance(pdf_path, str) else (pdf_path, False)
+        try:
+            files = self._client.files.list()
+            metadata = [(file.id, file.filename.split(".pdf")[0]) for file in files]
+            supplied_hash = self.file_hash(path)
+            for file_id, file_hash in metadata:
+                if supplied_hash == file_hash:
+                    return True, file_id
+            return (False,)
+        finally:
+            if is_temp:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
     def split_pdf(
         self,
-        pdf_path: str,
+        pdf_path: Union[str, FileStorage],
         instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None,
         out_dir: Optional[str] = None,
         *,
@@ -170,141 +198,128 @@ class InstrumentAiPdfSplitter:
         """
         Split the source PDF into one file per instrument/voice.
 
-        Uses provided instrument data or calls analyse() to obtain it, clamps page ranges to the document.
-        By default, writes files to '<stem>_parts' (or the given out_dir). If return_files=True, nothing is
-        written to disk and the split PDFs are returned as in-memory bytes instead.
-
-        Args:
-            pdf_path: Path to the source PDF.
-            instruments_data: List of InstrumentPart or dict with 'instruments'; if None, analyse() is invoked.
-            out_dir: Output directory; defaults to a '<stem>_parts' sibling of the source. Ignored when return_files=True.
-            return_files: If True, do not write to disk; return each part as bytes along with a suggested filename.
-
-        Returns:
-            List[Dict[str, Any]]: For on-disk mode: name, voice, start_page, end_page, output_path.
-            For in-memory mode (return_files=True): name, voice, start_page, end_page, filename, content (bytes).
-
-        Raises:
-            FileNotFoundError: If the path does not exist.
-            ValueError: If the path is not a file or not a PDF.
+        Accepts a filesystem path or a werkzeug FileStorage.
         """
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"File not found: {pdf_path}")
-        if not os.path.isfile(pdf_path):
-            raise ValueError(f"Not a file: {pdf_path}")
-        if not pdf_path.lower().endswith(".pdf"):
-            raise ValueError(f"Not a PDF file: {pdf_path}")
+        path, is_temp = self._ensure_path(pdf_path)
+        try:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+            if not os.path.isfile(path):
+                raise ValueError(f"Not a file: {path}")
+            if not path.lower().endswith(".pdf"):
+                raise ValueError(f"Not a PDF file: {path}")
 
-        if instruments_data is None:
-            analysed = self.analyse(pdf_path)
-            parts_input = analysed.get("instruments", [])
-        else:
-            if isinstance(instruments_data, dict):
-                parts_input = instruments_data.get("instruments", [])
+            if instruments_data is None:
+                analysed = self.analyse(pdf_path)  # pass original input so analyse can reuse FileStorage if provided
+                parts_input = analysed.get("instruments", [])
             else:
-                parts_input = instruments_data
+                if isinstance(instruments_data, dict):
+                    parts_input = instruments_data.get("instruments", [])
+                else:
+                    parts_input = instruments_data
 
-        reader = PdfReader(pdf_path)
-        total_pages = len(reader.pages)
+            reader = PdfReader(path)
+            total_pages = len(reader.pages)
 
-        base = Path(pdf_path)
-        if not return_files:
-            if out_dir is None:
-                out_dir = base.parent / f"{base.stem}_parts"
+            base = Path(path)
+            if not return_files:
+                if out_dir is None:
+                    out_dir = base.parent / f"{base.stem}_parts"
+                else:
+                    out_dir = Path(out_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
             else:
-                out_dir = Path(out_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            out_dir = None
+                out_dir = None
 
-        def sanitize(text: str) -> str:
-            text = re.sub(r"[^\w\s.\-]+", "", text, flags=re.UNICODE)
-            return re.sub(r"\s+", " ", text).strip()
+            def sanitize(text: str) -> str:
+                text = re.sub(r"[^\w\s.\-]+", "", text, flags=re.UNICODE)
+                return re.sub(r"\s+", " ", text).strip()
 
-        results: List[Dict[str, Any]] = []
+            results: List[Dict[str, Any]] = []
 
-        for idx, part in enumerate(parts_input, start=1):
-            if isinstance(part, InstrumentPart):
-                name = part.name
-                voice = part.voice
-                start_page = int(part.start_page)
-                end_page = int(part.end_page)
-            else:
-                name = part.get("name")
-                voice = part.get("voice")
-                start_page = int(part.get("start_page"))
-                end_page = int(part.get("end_page", start_page))
+            for idx, part in enumerate(parts_input, start=1):
+                if isinstance(part, InstrumentPart):
+                    name = part.name
+                    voice = part.voice
+                    start_page = int(part.start_page)
+                    end_page = int(part.end_page)
+                else:
+                    name = part.get("name")
+                    voice = part.get("voice")
+                    start_page = int(part.get("start_page"))
+                    end_page = int(part.get("end_page", start_page))
 
-            if not name or start_page is None:
-                continue
+                if not name or start_page is None:
+                    continue
 
-            if end_page is None:
-                end_page = start_page
-            if start_page > end_page:
-                start_page, end_page = end_page, start_page
+                if end_page is None:
+                    end_page = start_page
+                if start_page > end_page:
+                    start_page, end_page = end_page, start_page
 
-            start_page = max(1, min(start_page, total_pages))
-            end_page = max(1, min(end_page, total_pages))
+                start_page = max(1, min(start_page, total_pages))
+                end_page = max(1, min(end_page, total_pages))
 
-            writer = PdfWriter()
-            for p in range(start_page - 1, end_page):
-                writer.add_page(reader.pages[p])
+                writer = PdfWriter()
+                for p in range(start_page - 1, end_page):
+                    writer.add_page(reader.pages[p])
 
-            voice_suffix = (
-                f" {str(voice).strip()}"
-                if voice not in (None, "", "null", "None")
-                else ""
-            )
-            safe_name = sanitize(f"{name}{voice_suffix}")
-            filename = f"{idx:02d} - {safe_name}.pdf"
-
-            if return_files:
-                import io
-
-                buf = io.BytesIO()
-                writer.write(buf)
-                content = buf.getvalue()
-                results.append(
-                    {
-                        "name": name,
-                        "voice": voice,
-                        "start_page": start_page,
-                        "end_page": end_page,
-                        "filename": filename,
-                        "content": content,
-                    }
+                voice_suffix = (
+                    f" {str(voice).strip()}"
+                    if voice not in (None, "", "null", "None")
+                    else ""
                 )
-            else:
-                out_path = out_dir / filename
-                with open(out_path, "wb") as f:
-                    writer.write(f)
-                results.append(
-                    {
-                        "name": name,
-                        "voice": voice,
-                        "start_page": start_page,
-                        "end_page": end_page,
-                        "output_path": str(out_path),
-                    }
-                )
+                safe_name = sanitize(f"{name}{voice_suffix}")
+                filename = f"{idx:02d} - {safe_name}.pdf"
 
-        return results
+                if return_files:
+                    import io
+
+                    buf = io.BytesIO()
+                    writer.write(buf)
+                    content = buf.getvalue()
+                    results.append(
+                        {
+                            "name": name,
+                            "voice": voice,
+                            "start_page": start_page,
+                            "end_page": end_page,
+                            "filename": filename,
+                            "content": content,
+                        }
+                    )
+                else:
+                    out_path = out_dir / filename
+                    with open(out_path, "wb") as f:
+                        writer.write(f)
+                    results.append(
+                        {
+                            "name": name,
+                            "voice": voice,
+                            "start_page": start_page,
+                            "end_page": end_page,
+                            "output_path": str(out_path),
+                        }
+                    )
+
+            return results
+        finally:
+            if is_temp:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
     def analyse_and_split(
         self,
-        pdf_path: str,
+        pdf_path: Union[str, FileStorage],
         out_dir: Optional[str] = None,
         *,
         return_files: bool = False,
     ) -> List[Dict[str, Any]]:
         """Convenience method: analyse() then split_pdf() for multi-voice PDFs.
 
-        Args:
-            pdf_path: Path to the source PDF.
-            out_dir: Optional output directory for split files.
-            return_files: If True, return the split PDFs as bytes instead of writing to disk.
-        Returns:
-            List[Dict[str, Any]]: Same structure as split_pdf().
+        Accepts a filesystem path or a werkzeug FileStorage.
         """
         analysed = self.analyse(pdf_path)
         return self.split_pdf(
@@ -314,74 +329,80 @@ class InstrumentAiPdfSplitter:
             return_files=return_files,
         )
 
-    def analyse_single_part(self, pdf_path: str) -> Dict[str, Any]:
+    def analyse_single_part(self, pdf_path: Union[str, FileStorage]) -> Dict[str, Any]:
         """Analyse a single-part PDF and extract instrument name and optional voice.
 
-        This assumes the PDF contains exactly one instrument part. It returns a
-        simple JSON object with the detected instrument name and voice (if any),
-        along with start/end pages inferred from the document length.
+        Accepts a filesystem path or a werkzeug FileStorage.
         """
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"File not found: {pdf_path}")
-        if not os.path.isfile(pdf_path):
-            raise ValueError(f"Not a file: {pdf_path}")
-        if not pdf_path.lower().endswith(".pdf"):
-            raise ValueError(f"Not a PDF file: {pdf_path}")
+        path, is_temp = self._ensure_path(pdf_path)
+        try:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+            if not os.path.isfile(path):
+                raise ValueError(f"Not a file: {path}")
+            if not path.lower().endswith(".pdf"):
+                raise ValueError(f"Not a PDF file: {path}")
 
-        # Determine page count locally for reliable start/end inference
-        reader = PdfReader(pdf_path)
-        total_pages = len(reader.pages)
+            # Determine page count locally for reliable start/end inference
+            reader = PdfReader(path)
+            total_pages = len(reader.pages)
 
-        # Upload or reuse existing upload by content hash
-        if not self.is_file_already_uploaded(pdf_path)[0]:
-            tmp_dir = tempfile.gettempdir()
-            tmp_path = os.path.join(tmp_dir, f"{self.file_hash(pdf_path)}.pdf")
-            shutil.copyfile(pdf_path, tmp_path)
-            with open(tmp_path, "rb") as f:
-                uploaded_file = self._client.files.create(file=f, purpose="assistants")
-            os.remove(tmp_path)
-            file_id: str = uploaded_file.id
-        else:
-            file_id = self.is_file_already_uploaded(pdf_path)[1]
+            # Upload or reuse existing upload by content hash
+            if not self.is_file_already_uploaded(path)[0]:
+                tmp_dir = tempfile.gettempdir()
+                tmp_path = os.path.join(tmp_dir, f"{self.file_hash(path)}.pdf")
+                shutil.copyfile(path, tmp_path)
+                with open(tmp_path, "rb") as f:
+                    uploaded_file = self._client.files.create(file=f, purpose="assistants")
+                os.remove(tmp_path)
+                file_id: str = uploaded_file.id
+            else:
+                file_id = self.is_file_already_uploaded(path)[1]
 
-        single_part_prompt = (
-            "You are a music score analyzer. You are given a PDF that contains a single instrument part. "
-            "Identify the instrument name and any voice/desk number (e.g., '1', '2', '1.'), if present. "
-            "Return strict JSON with this schema:\n"
-            "{\n"
-            "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax'\n"
-            "  \"voice\": string|null   // e.g., '1', '2'; null if absent\n"
-            "}\n"
-            "Return JSON only — no explanations or extra text."
-        )
+            single_part_prompt = (
+                "You are a music score analyzer. You are given a PDF that contains a single instrument part. "
+                "Identify the instrument name and any voice/desk number (e.g., '1', '2', '1.'), if present. "
+                "Return strict JSON with this schema:\n"
+                "{\n"
+                "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax'\n"
+                "  \"voice\": string|null   // e.g., '1', '2'; null if absent\n"
+                "}\n"
+                "Return JSON only — no explanations or extra text."
+            )
 
-        # noinspection PyTypeChecker
-        response = self._client.responses.create(
-            model=self.model,
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_file", "file_id": file_id},
-                        {"type": "input_text", "text": single_part_prompt},
-                    ],
-                }
-            ],
-            reasoning={"effort": "high"},
-        )
-        meta = json.loads(response.output_text)
+            # noinspection PyTypeChecker
+            response = self._client.responses.create(
+                model=self.model,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_file", "file_id": file_id},
+                            {"type": "input_text", "text": single_part_prompt},
+                        ],
+                    }
+                ],
+                reasoning={"effort": "high"},
+            )
+            meta = json.loads(response.output_text)
 
-        # Normalize and augment with inferred page range
-        name = meta.get("name") if isinstance(meta, dict) else None
-        voice = meta.get("voice") if isinstance(meta, dict) else None
-        result = {
-            "name": name,
-            "voice": voice,
-            "start_page": 1,
-            "end_page": total_pages,
-            "pages": total_pages,
-        }
-        return result
+            # Normalize and augment with inferred page range
+            name = meta.get("name") if isinstance(meta, dict) else None
+            voice = meta.get("voice") if isinstance(meta, dict) else None
+            result = {
+                "name": name,
+                "voice": voice,
+                "start_page": 1,
+                "end_page": total_pages,
+                "pages": total_pages,
+            }
+            return result
+        finally:
+            if is_temp:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
 
     @staticmethod
     def file_hash(path):
