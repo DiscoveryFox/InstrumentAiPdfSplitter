@@ -367,7 +367,7 @@ class InstrumentAiPdfSplitter:
                     ],
                 }
             ],
-            reasoning={"effort": "medium"},
+            reasoning={"effort": "high"},
         )
         meta = json.loads(response.output_text)
 
