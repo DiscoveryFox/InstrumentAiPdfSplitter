@@ -1,3 +1,3 @@
-from .AISplitter import InstrumentAiPdfSplitter, InstrumentPart
+from .AISplitter import InstrumentAiPdfSplitter, InstrumentPart, FileSizeExceededError
 
-__all__ = ["InstrumentAiPdfSplitter", "InstrumentPart"]
+__all__ = ["InstrumentAiPdfSplitter", "InstrumentPart", "FileSizeExceededError"]
