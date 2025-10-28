@@ -4,6 +4,8 @@ A lightweight Python tool that uses OpenAI to analyze multi-page sheet-music PDF
 
 - AI-assisted part detection: extracts instruments, voice numbers, and 1-indexed start/end pages as strict JSON.
 - Smart uploads: avoids re-uploading identical files via SHA-256 hashing.
+- **File size validation**: automatically validates files don't exceed 32MB before processing.
+- **Direct URL support**: pass file URLs directly to OpenAI without uploading.
 - Reliable splitting: clamps page ranges, sanitizes filenames, and writes outputs using pypdf.
 - Flexible input: use AI analysis or provide your own instrument list (InstrumentPart or JSON).
 - Configurable model: via constructor or OPENAI_MODEL env var; requires an OpenAI API key.
@@ -26,7 +28,7 @@ Requirements:
 ```python
 import os
 import json
-from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter
+from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter, FileSizeExceededError
 
 # Set your OpenAI API key via env or pass directly
 api_key = os.getenv("OPENAI_API_KEY")
@@ -34,7 +36,8 @@ api_key = os.getenv("OPENAI_API_KEY")
 splitter = InstrumentAiPdfSplitter(api_key=api_key)
 
 # 1) Analyze the PDF to get instrument parts and page ranges
-data = splitter.analyse("scores/book.pdf")
+# Use pdf_path for local files or URLs
+data = splitter.analyse(pdf_path="scores/book.pdf")
 print(json.dumps(data, indent=2))
 
 # Example output (JSON):
@@ -46,9 +49,13 @@ print(json.dumps(data, indent=2))
 # }
 
 # 2) Split the PDF into one file per instrument/voice
-results = splitter.split_pdf("scores/book.pdf")
+results = splitter.split_pdf(pdf_path="scores/book.pdf")
 for r in results:
     print(f"{r['name']} {r['voice']} -> {r['output_path']} [{r['start_page']}-{r['end_page']}]")
+
+# 3) Using file URLs (for already uploaded files)
+data = splitter.analyse(file_url="https://example.com/score.pdf")
+print(json.dumps(data, indent=2))
 ```
 
 ### One-liner
@@ -56,7 +63,7 @@ for r in results:
 If you just want to analyse and split in one go:
 
 ```python
-results = splitter.analyse_and_split("scores/book.pdf")
+results = splitter.analyse_and_split(pdf_path="scores/book.pdf")
 ```
 
 ### Single-part analysis (extract instrument and voice)
@@ -64,9 +71,12 @@ results = splitter.analyse_and_split("scores/book.pdf")
 If your PDF contains a single instrument part and you only want to extract its information:
 
 ```python
-info = splitter.analyse_single_part("scores/trumpet1.pdf")
+info = splitter.analyse_single_part(pdf_path="scores/trumpet1.pdf")
 print(info)
 # Example: {"name": "Trumpet in Bb", "voice": "1", "start_page": 1, "end_page": 3, "pages": 3}
+
+# Or use a file URL
+info = splitter.analyse_single_part(file_url="https://example.com/trumpet.pdf")
 ```
 
 By default, output files are saved into a sibling directory named "<stem>_parts" (e.g., book_parts).
@@ -75,20 +85,48 @@ To avoid writing to disk entirely and get the split PDFs back as in-memory bytes
 
 ```python
 # Return split PDFs without writing them to disk
-results = splitter.split_pdf("scores/book.pdf", return_files=True)
+results = splitter.split_pdf(pdf_path="scores/book.pdf", return_files=True)
 for r in results:
     print(r["filename"], len(r["content"]))  # content is bytes for the PDF
 
 # One-liner variant
-results = splitter.analyse_and_split("scores/book.pdf", return_files=True)
+results = splitter.analyse_and_split(pdf_path="scores/book.pdf", return_files=True)
 ```
+
+### File size validation and error handling
+
+Files are automatically validated to ensure they don't exceed 32MB:
+
+```python
+try:
+    data = splitter.analyse(pdf_path="large_file.pdf")
+except FileSizeExceededError as e:
+    print(f"File too large: {e}")
+    # Output: File size (45.32 MB) exceeds maximum allowed size of 32 MB
+```
+
+### Using file URLs instead of uploading
+
+If you have a file already accessible via URL (e.g., from a CDN or OpenAI), you can pass it directly without uploading:
+
+```python
+# Analyze using a file URL
+data = splitter.analyse(file_url="https://example.com/score.pdf")
+
+# Analyze single part using a file URL
+info = splitter.analyse_single_part(file_url="https://files.openai.com/file-abc123")
+
+# Note: split_pdf and analyse_and_split require pdf_path (local file) since they need to read pages
+```
+
+**Important**: Methods accept **either** `pdf_path` **or** `file_url`, but not both. Providing both will raise a `ValueError`.
 
 ## Manual instrument data (no AI call)
 
 You can skip analysis and provide parts manually, either as InstrumentPart instances or JSON-like dicts.
 
 ```python
-from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter, InstrumentPart
+from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter, InstrumentPart, FileSizeExceededError
 
 splitter = InstrumentAiPdfSplitter(api_key="YOUR_OPENAI_API_KEY")
 
@@ -130,23 +168,26 @@ Note: Model availability depends on your OpenAI account. Use a model that suppor
 
 ## Public API
 
-| Item | Signature | Description |
-|------|-----------|-------------|
-| InstrumentPart | name: str; voice: Optional[str]; start_page: int; end_page: int | Dataclass representing a single instrument part with optional voice and 1-indexed inclusive page range. |
-| InstrumentAiPdfSplitter.__init__ | (api_key: str, *, model: str | None = None) -> None | Initialize the splitter with OpenAI credentials and default prompt. |
-| InstrumentAiPdfSplitter.analyse | (pdf_path: str) -> dict | Analyze a PDF and return instrument data as JSON {instruments: [...]}. |
-| InstrumentAiPdfSplitter.analyse_and_split | (pdf_path: str, out_dir: Optional[str] = None, *, return_files: bool = False) -> List[Dict[str, Any]] | Convenience: analyse then split in one call; set return_files=True to get in-memory PDFs. |
-| InstrumentAiPdfSplitter.analyse_single_part | (pdf_path: str) -> Dict[str, Any] | Analyse a single-part PDF and extract instrument name and optional voice; returns also start/end/pages. |
-| InstrumentAiPdfSplitter.is_file_already_uploaded | (pdf_path: str) -> Tuple[bool, str] | Check if a file (by SHA-256) is already uploaded; returns (True, file_id) or (False,). |
-| InstrumentAiPdfSplitter.split_pdf | (pdf_path: str, instruments_data: List[InstrumentPart] | Dict[str, Any] | None = None, out_dir: Optional[str] = None, *, return_files: bool = False) -> List[Dict[str, Any]] | Split the PDF per instrument/voice. Returns on-disk metadata (output_path) or in-memory (filename, content bytes) when return_files=True. |
-| InstrumentAiPdfSplitter.file_hash | (path: str) -> str | Compute SHA-256 hex digest of a file’s contents. |
+|| Item | Signature | Description |
+||------|-----------|-------------|
+|| FileSizeExceededError | Exception | Raised when a file exceeds the 32MB size limit. |
+|| InstrumentPart | name: str; voice: Optional[str]; start_page: int; end_page: int | Dataclass representing a single instrument part with optional voice and 1-indexed inclusive page range. |
+|| InstrumentAiPdfSplitter.__init__ | (api_key: str, *, model: str \| None = None) -> None | Initialize the splitter with OpenAI credentials and default prompt. |
+|| InstrumentAiPdfSplitter.analyse | (pdf_path: Union[str, FileStorage, None] = None, file_url: Optional[str] = None) -> dict | Analyze a PDF and return instrument data as JSON {instruments: [...]}. Use either pdf_path or file_url, not both. |
+|| InstrumentAiPdfSplitter.analyse_and_split | (pdf_path: Union[str, FileStorage, None] = None, out_dir: Optional[str] = None, *, return_files: bool = False, file_url: Optional[str] = None) -> List[Dict[str, Any]] | Convenience: analyse then split in one call; set return_files=True to get in-memory PDFs. Requires pdf_path (not file_url). |
+|| InstrumentAiPdfSplitter.analyse_single_part | (pdf_path: Union[str, FileStorage, None] = None, file_url: Optional[str] = None) -> Dict[str, Any] | Analyse a single-part PDF and extract instrument name and optional voice; returns also start/end/pages. Use either pdf_path or file_url, not both. |
+|| InstrumentAiPdfSplitter.is_file_already_uploaded | (pdf_path: Union[str, FileStorage]) -> Tuple[bool, str] \| Tuple[bool] | Check if a file (by SHA-256) is already uploaded; returns (True, file_id) or (False,). |
+|| InstrumentAiPdfSplitter.split_pdf | (pdf_path: Union[str, FileStorage, None] = None, instruments_data: List[InstrumentPart] \| Dict[str, Any] \| None = None, out_dir: Optional[str] = None, *, return_files: bool = False, file_url: Optional[str] = None) -> List[Dict[str, Any]] | Split the PDF per instrument/voice. Returns on-disk metadata (output_path) or in-memory (filename, content bytes) when return_files=True. Requires pdf_path (not file_url). |
+|| InstrumentAiPdfSplitter.file_hash | (path: str) -> str | Compute SHA-256 hex digest of a file's contents. |
 
 ## Error handling
 
-- FileNotFoundError: Path doesn’t exist.
-- ValueError: Not a file or not a .pdf.
-- json.JSONDecodeError: If AI output isn’t valid JSON (rare; retry or adjust model).
-- OpenAI errors: Network/auth/model issues are propagated from the OpenAI SDK.
+- **FileSizeExceededError**: File exceeds 32MB size limit.
+- **ValueError**: Invalid parameters (e.g., both pdf_path and file_url provided, or neither provided).
+- **FileNotFoundError**: Path doesn't exist.
+- **ValueError**: Not a file or not a .pdf.
+- **json.JSONDecodeError**: If AI output isn't valid JSON (rare; retry or adjust model).
+- **OpenAI errors**: Network/auth/model issues are propagated from the OpenAI SDK.
 
 ## Tips for best results
 
