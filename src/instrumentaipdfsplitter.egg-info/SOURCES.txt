@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/InstrumentAiPdfSplitter/AISplitter.py
+src/InstrumentAiPdfSplitter/__init__.py
+src/instrumentaipdfsplitter.egg-info/PKG-INFO
+src/instrumentaipdfsplitter.egg-info/SOURCES.txt
+src/instrumentaipdfsplitter.egg-info/dependency_links.txt
+src/instrumentaipdfsplitter.egg-info/requires.txt
+src/instrumentaipdfsplitter.egg-info/top_level.txt

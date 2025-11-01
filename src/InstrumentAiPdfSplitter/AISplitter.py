@@ -93,6 +93,7 @@ class InstrumentAiPdfSplitter:
             "- Use clear visual or textual cues such as headers, instrument labels, and section titles.\n"
             "- A page is *more likely* to be the START page for an instrument if the title of a piece also appears on that page.\n"
             "- If uncertain, make a best-effort guess based on layout, typography, or recurring labeling patterns.\n"
+            "- IMPORTANT: Always return instrument names in English (e.g., 'Clarinet' not 'Klarinette', 'Trumpet' not 'Trompete').\n"
             "Return JSON only — no explanations or extra text."
         )
 
@@ -493,6 +494,7 @@ class InstrumentAiPdfSplitter:
             "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax'\n"
             "  \"voice\": string|null   // e.g., '1', '2'; null if absent\n"
             "}\n"
+            "IMPORTANT: Always return the instrument name in English (e.g., 'Clarinet' not 'Klarinette', 'Trumpet' not 'Trompete').\n"
             "Return JSON only — no explanations or extra text."
         )
         
