@@ -349,6 +349,7 @@ class InstrumentAiPdfSplitter:
         *,
         return_files: bool = False,
         file_url: Optional[str] = None,
+        ignore_size_limit: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Split the source PDF into one file per instrument/voice.
@@ -388,7 +389,12 @@ class InstrumentAiPdfSplitter:
             raise ValueError("Cannot split PDF using only file_url. Please provide pdf_path to split the file.")
         
         print("[DEBUG split_pdf] Ensuring path from pdf_path")
-        path, is_temp = self._ensure_path(pdf_path)
+        if ignore_size_limit and isinstance(pdf_path, str):
+            # Bypass size guard for local file path
+            path, is_temp = pdf_path, False
+            print("[DEBUG split_pdf] ignore_size_limit=True, using provided path directly")
+        else:
+            path, is_temp = self._ensure_path(pdf_path)
         print(f"[DEBUG split_pdf] Path resolved: {path}, is_temp: {is_temp}")
         try:
             print("[DEBUG split_pdf] Validating file path")
@@ -578,19 +584,22 @@ class InstrumentAiPdfSplitter:
         """
         if (pdf_path is None and file_url is None) or (pdf_path is not None and file_url is not None):
             raise ValueError("Must provide either pdf_path or file_url, but not both")
-        
+
         single_part_prompt = (
             "You are a music score analyzer. You are given a PDF that contains a single instrument part. "
             "Identify the instrument name and any voice/desk number (e.g., '1', '2', '1.'), if present. "
+            "If the PDF appears to be a full score, conductor’s score, or anything similar, "
+            "then return only 'Conductor' as the name and set 'voice' to null. "
             "Return strict JSON with this schema:\n"
             "{\n"
-            "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax'\n"
+            "  \"name\": string,        // e.g., 'Trumpet in Bb', 'Alto Sax', or 'Conductor'\n"
             "  \"voice\": string|null   // e.g., '1', '2'; null if absent\n"
             "}\n"
-            "IMPORTANT: Always return the instrument name in English (e.g., 'Clarinet' not 'Klarinette', 'Trumpet' not 'Trompete').\n"
+            "IMPORTANT: Always return the instrument name in English (e.g., 'Clarinet' not 'Klarinette', "
+            "'Trumpet' not 'Trompete').\n"
             "Return JSON only — no explanations or extra text."
         )
-        
+
         # Use file_url directly if provided
         if file_url:
             total_pages = None  # Can't determine without the file
