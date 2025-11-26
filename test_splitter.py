@@ -12,8 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from InstrumentAiPdfSplitter import InstrumentAiPdfSplitter, InstrumentPart, FileSizeExceededError
 
-test_file_url = "https://musicstore-test-bucket.s3.amazonaws.com/2d75b9c224775a8b0063d467b54b819849a1a0b120e3cf9e672cb72ef80c80a5?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5X2JUN3TO3GCXPZZ%2F20251103%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251103T232055Z&X-Amz-Expires=1800&X-Amz-SignedHeaders=host&X-Amz-Signature=e3f407a9266ecf1bd8b7cbf8da66326eb271bd2137381f5ddab691454d03f19c"
-
 
 def test_instrument_part():
     """Test InstrumentPart dataclass creation"""
@@ -83,7 +81,7 @@ def test_error_handling():
     
     # Test analyse with both parameters - only test parameter validation, not API calls
     try:
-        splitter.analyse(pdf_path="test.pdf", file_url=test_file_url)
+        splitter.analyse(pdf_path="test.pdf", file_url="http://example.com/test.pdf")
         assert False, "Should raise ValueError"
     except ValueError as e:
         assert "Must provide either pdf_path or file_url" in str(e)
@@ -97,7 +95,7 @@ def test_error_handling():
     
     # Test split_pdf with both parameters
     try:
-        splitter.split_pdf(pdf_path="test.pdf", file_url=test_file_url)
+        splitter.split_pdf(pdf_path="test.pdf", file_url="http://example.com/test.pdf")
         assert False, "Should raise ValueError"
     except ValueError as e:
         assert "Must provide either pdf_path or file_url" in str(e)
